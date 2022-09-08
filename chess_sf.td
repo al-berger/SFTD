@@ -1,9 +1,10 @@
 /***
-	File:          chess_sf.td
-	Created:       Fri, 19 Aug 2022 10:23
-	Last edited:   Sat, 20 Aug 2022 04:30
-    Version:       0.1
-	Abstract:      SFTD: Transd translation of Sunfish chess engine.
+ File:          chess_sf.td
+ Created:       Fri, 19 Aug 2022 10:23
+ Last edited:   Thu, 08 Sep 2022 12:36
+ Version:       0.2
+ Abstract:      SFTD: Transd translation of Sunfish chess engine.
+ Author:        Albert Berger. <alberger/gmail/com>
 */
 #lang transd
 
@@ -191,27 +192,39 @@ public class Entry : {
 
 class Searcher: {
 import: "Global",
-import: "Pos",
     ScoreKey: typealias(Tuple<Pos Int Bool>),
 
     tp_score: HashIndex<ScoreKey Entry>(),
     tp_move:  HashIndex<Pos Move>(),
     history: HashSet<Pos>(),
 
-moves: Lambda<Pos Int Int MoveSc>(λ pos Pos() gamma Int() depth Int()
-    locals: sc Int()
-    (if (not depth) 
-        (yield MoveSc(Move() pos.score))
-    else
-        (for move in (gen_moves pos) do
-            (= sc (bound (move pos move) (- 1 gamma) (- depth 1) false))
-            (yield MoveSc(move (- sc)))
-    ))
-    (throw :stopIter)
-),
-
 bound: (λ pos Pos() gamma Int() depth Int() root Bool(true)
     locals: best 0 movesc MoveSc() entry Entry()
+    moves Lambda<Null MoveSc>(λ [[pos, gamma, depth, root]]
+    locals: sc Int()
+    (if (and (> depth 0) (not root)
+          (any (for c in "RBNK" project (is-el pos.board c))))
+        (= sc (bound (nullmove pos) (- 1 gamma) (- depth 3) false))
+        (yield MoveSc(Move() (- sc)))
+    )
+    (if (not depth)
+        (yield MoveSc(Move() pos.score))
+    )
+    (with hashmove (get-val tp_move pos Move())
+        (if (and (size hashmove) (or (> depth 0) (>= (value (move pos)) QS_LIMIT)))
+            (= sc (bound (move pos hashmove) (- 1 gamma) (- depth 1) false))
+            (yield MoveSc(hashmove (- sc)))
+    )   )
+
+    (for move in (gen_moves pos) do
+        (if (or (> depth 0) (>= (value pos move) QS_LIMIT))
+            (= sc (bound (move pos move) (- 1 gamma) (- depth 1) false))
+            (yield MoveSc(move (- sc)))
+        )
+    )
+    (throw :stopIter)
+)
+
     (= depth (max depth 0))
     (if (<= pos.score (- MATE_LOWER)) (ret (- MATE_LOWER)))
     (if (and DRAW_TEST (not root) (is-el history pos))
@@ -219,18 +232,19 @@ bound: (λ pos Pos() gamma Int() depth Int() root Bool(true)
     (rebind entry (get-val tp_score ScoreKey(pos depth root) 
             Entry((- MATE_UPPER) MATE_UPPER)))
     (if (and (>= entry.lower gamma) (or (not root) (find tp_move pos)))
-            (ret entry.lower))
-    (if (< entry.upper gamma) (ret entry.upper)
-    )
+        (ret entry.lower))
+    (if (< entry.upper gamma)
+        (ret entry.upper))
     
     (= best (- MATE_UPPER))
 
     (while true (try 
-        (= movesc (exec moves pos gamma depth))
+        (= movesc (exec moves))
         (if (< best (snd movesc)) (= best (snd movesc)))
         (if (>= best gamma) 
             (if (> (size tp_move) TABLE_SIZE) (clear tp_move))
             (set-el tp_move pos (fst movesc))
+            break
         )
         (catch break))
     )
@@ -244,8 +258,9 @@ bound: (λ pos Pos() gamma Int() depth Int() root Bool(true)
 
 search: (λ pos Pos() hist Vector<Pos>() -> SearchRes()
     locals: gamma Int() score Int() ent Entry() depth Int()
+
     (if DRAW_TEST (= history hist) (clear tp_score))
-    (for _depth in Range(1 2) do (= depth _depth)
+    (for _depth in Range(1 3) do (= depth _depth)
         (with lower (- MATE_UPPER) upper Int(MATE_UPPER)
             (while (< lower (- upper EVAL_ROUGHNESS))
                 (= gamma (/ (+ lower upper 1) 2))
@@ -273,8 +288,8 @@ parse: (λ s String()
 ),
 
 render: (λ i Int()
-    locals: fil (mod (- i A1) 10)
-    rank (/ (- i A1) 10)
+    locals: fil 0 rank 0
+    (divrem (- i A1) 10 rank fil)
     (ret String(Char((+ fil (to-Int Char('a')))) (- 1 rank)))
 ),
 
@@ -294,9 +309,8 @@ _start: (λ locals: hist Vector<Pos>() searcher Searcher()
              move Move() curPos Pos() srchres SearchRes()
              srchmv Move() srchsc Int()
 
-    // populate pst
     (for el in pst do
-        (with res Vint() padrow Lambda<Vector<Int> Vector<Int>>(λ row Vint() 
+        (with res Vint() padrow Lambda<Vector<Int> Vector<Int>>(λ [[el]] row Vint() 
             (ret (+ [0] (for i in row project (+ i (get piece (fst el)))) [0])))
     (for i in Range(8) do (+= res (exec padrow 
         Range(in: (snd el) (* 8 i) (+ (* 8 i) 8)))))
@@ -305,8 +319,6 @@ _start: (λ locals: hist Vector<Pos>() searcher Searcher()
         )
     )
 
-
-    // Populate directions
     (set-el directions "P" [N, (+ N N), (+ N W), (+ N E)])
     (set-el directions "N" [(+ N N E), (+ E N E), (+ E S E), (+ S S E),
         (+ S S W), (+ W S W), (+ W N W), (+ N N W)])
@@ -330,7 +342,6 @@ _start: (λ locals: hist Vector<Pos>() searcher Searcher()
                 (if (match smove "[a-h][1-8][a-h][1-8]")
                     (= move [[(parse (subn smove 0 2)), (parse (subn smove 2 2))]])
                 else (lout "Please enter a move like g8f6"))
-                (lout "Your move is: " move)
             )
         )
         (append hist (move (get hist -1) move))
@@ -344,13 +355,13 @@ _start: (λ locals: hist Vector<Pos>() searcher Searcher()
             (try
                 (= srchres (search searcher curPos hist))
                 (catch (lout "Search ended. Exiting.") (exit)))
-            (if (>= (fst srchres) 1) break)
+            (if (>= (fst srchres) 2) break)
         )
         (= srchsc (get srchres 2))
         (= srchmv (snd srchres))
         (lout "My move is: " (render (- 119 (fst srchmv))) (render (- 119 (snd srchmv))))
 
-        (append hist (move (get hist -1) move))
+        (append hist (move (get hist -1) srchmv))
     )
 )
 }

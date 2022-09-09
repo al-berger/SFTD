@@ -1,10 +1,13 @@
 /***
  File:          chess_sf.td
  Created:       Fri, 19 Aug 2022 10:23
- Last edited:   Thu, 08 Sep 2022 12:36
- Version:       0.2
- Abstract:      SFTD: Transd translation of Sunfish chess engine.
+ Last edited:   Fri, 09 Sep 2022 14:39
+ Version:       0.2.1
  Author:        Albert Berger. <alberger/gmail/com>
+
+ Abstract:      SFTD: Transd translation of Sunfish chess engine.
+                Works with TREE3 Transd interpreter version 0.2-503 or higher.
+                TREE3 repo: https://github.com/transd-lang/TREE3
 */
 #lang transd
 
@@ -201,29 +204,29 @@ import: "Global",
 bound: (λ pos Pos() gamma Int() depth Int() root Bool(true)
     locals: best 0 movesc MoveSc() entry Entry()
     moves Lambda<Null MoveSc>(λ [[pos, gamma, depth, root]]
-    locals: sc Int()
-    (if (and (> depth 0) (not root)
-          (any (for c in "RBNK" project (is-el pos.board c))))
-        (= sc (bound (nullmove pos) (- 1 gamma) (- depth 3) false))
-        (yield MoveSc(Move() (- sc)))
-    )
-    (if (not depth)
-        (yield MoveSc(Move() pos.score))
-    )
-    (with hashmove (get-val tp_move pos Move())
-        (if (and (size hashmove) (or (> depth 0) (>= (value (move pos)) QS_LIMIT)))
-            (= sc (bound (move pos hashmove) (- 1 gamma) (- depth 1) false))
-            (yield MoveSc(hashmove (- sc)))
-    )   )
-
-    (for move in (gen_moves pos) do
-        (if (or (> depth 0) (>= (value pos move) QS_LIMIT))
-            (= sc (bound (move pos move) (- 1 gamma) (- depth 1) false))
-            (yield MoveSc(move (- sc)))
+        locals: sc Int()
+        (if (and (> depth 0) (not root)
+              (any (for c in "RBNK" project (is-el pos.board c))))
+            (= sc (bound (nullmove pos) (- 1 gamma) (- depth 3) false))
+            (yield MoveSc(Move() (- sc)))
         )
+        (if (not depth)
+            (yield MoveSc(Move() pos.score))
+        )
+        (with hashmove (get-val tp_move pos Move())
+            (if (and (size hashmove) (or (> depth 0) (>= (value (move pos)) QS_LIMIT)))
+                (= sc (bound (move pos hashmove) (- 1 gamma) (- depth 1) false))
+                (yield MoveSc(hashmove (- sc)))
+        )   )
+
+        (for move in (gen_moves pos) do
+            (if (or (> depth 0) (>= (value pos move) QS_LIMIT))
+                (= sc (bound (move pos move) (- 1 gamma) (- depth 1) false))
+                (yield MoveSc(move (- sc)))
+            )
+        )
+        (throw :stopIter)
     )
-    (throw :stopIter)
-)
 
     (= depth (max depth 0))
     (if (<= pos.score (- MATE_LOWER)) (ret (- MATE_LOWER)))
@@ -260,7 +263,7 @@ search: (λ pos Pos() hist Vector<Pos>() -> SearchRes()
     locals: gamma Int() score Int() ent Entry() depth Int()
 
     (if DRAW_TEST (= history hist) (clear tp_score))
-    (for _depth in Range(1 3) do (= depth _depth)
+    (for _depth in Range(1 4) do (= depth _depth)
         (with lower (- MATE_UPPER) upper Int(MATE_UPPER)
             (while (< lower (- upper EVAL_ROUGHNESS))
                 (= gamma (/ (+ lower upper 1) 2))
